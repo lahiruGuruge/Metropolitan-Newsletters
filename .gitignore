@@ -1,0 +1,7 @@
+input/
+__pycache__/
+*.pdf
+dist/data.json
+dist/pages/
+dist/thumbs/
+dist/pdfs/
