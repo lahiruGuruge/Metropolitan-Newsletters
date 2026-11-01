@@ -4,7 +4,7 @@ root=pathlib.Path(__file__).resolve().parent
 src=pathlib.Path(sys.argv[1]) if len(sys.argv)>1 else root/'input'
 dest=root/'dist/pdfs';dest.mkdir(parents=True,exist_ok=True)
 def run(f):
- m=re.match(r'(\d+)\. Newsletter (\w+) (\d+)',f.stem)
+ m=re.match(r'(\d+)\. News\s*letter (\w+) (\d+)',f.stem,re.I)
  if not m:return
  out=dest/f'{m[3]}-{int(m[1]):02d}.pdf'
  subprocess.run(['gs','-sDEVICE=pdfwrite','-dCompatibilityLevel=1.5','-dPDFSETTINGS=/ebook','-dNOPAUSE','-dBATCH','-dQUIET',f'-sOutputFile={out}',str(f)],check=True,capture_output=True)
