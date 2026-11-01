@@ -13,10 +13,12 @@ categories={
  'Sports & Wellbeing':r'cricket|badminton|sport|golf|football|wellness|health|fitness|rugby|swimming|netball|basketball',
  'Community & Sustainability':r'CSR|donat|community|charity|sustainab|environment|school|blood|tree planting|children|social responsibility',
  'Events & Culture':r'celebrat|event|festival|poson|vesak|christmas|new year|avurudu|bakthi|gathering|party|trip|outing|exhibition|infotel',
+ 'HR & Digital Systems':r'\bHRIS\b|peoples\s*hr|appraisal|human resource|\bSAP\b|system migration|insurance polic|mobile app system',
+ 'Knowledge & Employee Resources':r'knowledge corner|kaizen|mindset|personal brand|emotional intelligence|nomophobia|quiz|hidden words|birthdays|spot the|find 6',
  'Branches & Facilities':r'branch|opening|inaugurat|re.launch|centre|center|showroom|office|facility|facilities'
 }
 def clean(t):
- t=re.sub(r'(?im)^.*VOLUME\s*\d+.*(?:ISSUE|202[34]).*$', '',t)
+ t=re.sub(r'(?im)^.*VOLUME\s*\d+.*(?:ISSUE|20\d{2}).*$', '',t)
  t=re.sub(r'(?im)^\s*(?:ETRO NEWS|METRO NEWS|PAGE\s*\d+|\d{1,2})\s*$', '',t)
  t=re.sub(r'(?<=\w)-\n(?=\w)','',t)
  return re.sub(r'[ \t]+',' ',t).strip()
@@ -34,7 +36,7 @@ def process(arg):
   for b in p.get_text('dict')['blocks']:
    for l in b.get('lines',[]):
     s=' '.join(x['text'] for x in l['spans']).strip(); size=max((x['size'] for x in l['spans']),default=0)
-    if len(s)>8 and not re.search(r'volume|issue|metro news|ETRO NEWS|^page',s,re.I) and len(s)<160:
+    if len(s)>8 and not re.search(r'volume|issue|metro\s+news|ETRO\s+NEWS|^page',s,re.I) and len(s)<160:
      lines.append((size,s))
  title=''
  if lines:
@@ -54,13 +56,23 @@ def process(arg):
  return {'id':id,'issue':f'{year}-{mi:02d}','year':year,'month':month,'monthNumber':mi,'page':i+1,'title':title,'text':text,'categories':tags,'brands':brands,'ocr':ocr,'pdf':f'pdfs/{year}-{mi:02d}.pdf'}
 jobs=[]; issues=[]
 for f in sorted(SOURCE.glob('*.pdf')):
- m=re.match(r'(\d+)\. Newsletter (\w+) (\d+)',f.stem); mi,month,year=int(m[1]),m[2],int(m[3]); d=fitz.open(f)
+ m=re.match(r'(\d+)\. News\s*letter (\w+) (\d+)',f.stem,re.I)
+ if not m: raise ValueError('Unrecognised newsletter filename: '+f.name)
+ mi,month,year=int(m[1]),m[2],int(m[3]); d=fitz.open(f)
  issues.append({'id':f'{year}-{mi:02d}','year':year,'month':month,'monthNumber':mi,'pages':len(d),'pdf':f'pdfs/{year}-{mi:02d}.pdf','cover':f'thumbs/{year}-{mi:02d}-01.webp'})
  jobs.extend((str(f),year,month,mi,i) for i in range(len(d)))
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
  pages=list(ex.map(process,jobs))
+old=json.load(open(DIST/'data.json')) if (DIST/'data.json').exists() else {'issues':[],'pages':[],'categories':[]}
+replaced={i['id'] for i in issues}
+added_pages=len(pages); added_issues=len(issues)
+pages=[p for p in old['pages'] if p['issue'] not in replaced]+pages
+issues=[i for i in old['issues'] if i['id'] not in replaced]+issues
 pages.sort(key=lambda p:(p['year'],p['monthNumber'],p['page']))
-json.dump({'issues':sorted(issues,key=lambda x:x['id']),'pages':pages,'categories':list(categories)+['Other News'],'notes':'Issue dates are derived from supplied filenames. Categories are automatically suggested at page level. OCR may contain transcription errors; verify important details in the source PDF.'},open(DIST/'data.json','w'),ensure_ascii=False)
+overrides=json.load(open(ROOT/'title-overrides.json')) if (ROOT/'title-overrides.json').exists() else {}
+for p in pages:
+ if p['issue'] in replaced and p['id'] in overrides: p['title']=overrides[p['id']]
+json.dump({'issues':sorted(issues,key=lambda x:x['id']),'pages':pages,'categories':list(dict.fromkeys(old['categories']+list(categories)+['Other News'])),'notes':'Issue dates are derived from supplied filenames. Categories are automatically suggested at page level. OCR may contain transcription errors; verify important details in the source PDF.'},open(DIST/'data.json','w'),ensure_ascii=False)
 print('Indexed',len(pages),'pages from',len(issues),'issues; OCR:',sum(p['ocr'] for p in pages),flush=True)
 
-subprocess.run([sys.executable,str(ROOT/"refine.py")],check=True)
+print('Merged',added_pages,'pages from',added_issues,'issues; existing issues retained.',flush=True)
